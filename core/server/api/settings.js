@@ -60,8 +60,7 @@ updateConfigCache = function () {
             postsPerPage: (settingsCache.postsPerPage && settingsCache.postsPerPage.value) || 5,
             permalinks: (settingsCache.permalinks && settingsCache.permalinks.value) || '/:slug/',
             twitter: (settingsCache.twitter && settingsCache.twitter.value) || '',
-            facebook: (settingsCache.facebook && settingsCache.facebook.value) || '',
-            timezone: (settingsCache.activeTimezone && settingsCache.activeTimezone.value) || config.theme.timezone
+            facebook: (settingsCache.facebook && settingsCache.facebook.value) || ''
         },
         labs: labsValue
     });
@@ -108,7 +107,7 @@ updateSettingsCache = function (settings) {
  * @returns {*}
  */
 settingsFilter = function (settings, filter) {
-    return _.fromPairs(_.filter(_.toPairs(settings), function (setting) {
+    return _.object(_.filter(_.pairs(settings), function (setting) {
         if (filter) {
             return _.some(filter.split(','), function (f) {
                 return setting[1].type === f;

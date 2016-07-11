@@ -3,13 +3,15 @@
 
 // Module dependencies
 var express     = require('express'),
-    _           = require('lodash'),
+    hbs         = require('express-hbs'),
+    compress    = require('compression'),
     uuid        = require('node-uuid'),
     Promise     = require('bluebird'),
     i18n        = require('./i18n'),
     api         = require('./api'),
     config      = require('./config'),
     errors      = require('./errors'),
+    helpers     = require('./helpers'),
     middleware  = require('./middleware'),
     migrations  = require('./data/migration'),
     models      = require('./models'),
@@ -19,7 +21,6 @@ var express     = require('express'),
     xmlrpc      = require('./data/xml/xmlrpc'),
     slack       = require('./data/slack'),
     GhostServer = require('./ghost-server'),
-    scheduling  = require('./scheduling'),
     validateThemes = require('./utils/validate-themes'),
 
     dbHash;
@@ -49,7 +50,9 @@ function initDbHashAndFirstRun() {
 // Sets up the express server instances, runs init on a bunch of stuff, configures views, helpers, routes and more
 // Finally it returns an instance of GhostServer
 function init(options) {
-    var ghostServer = null;
+    // Get reference to an express app instance.
+    var blogApp = express(),
+        adminApp = express();
 
     // ### Initialisation
     // The server and its dependencies require a populated config
@@ -87,16 +90,33 @@ function init(options) {
             // Initialize sitemaps
             sitemap.init(),
             // Initialize xmrpc ping
-            xmlrpc.listen(),
+            xmlrpc.init(),
             // Initialize slack ping
-            slack.listen()
+            slack.init()
         );
     }).then(function () {
-        // Get reference to an express app instance.
-        var parentApp = express();
+        var adminHbs = hbs.create();
+
+        // ##Configuration
+
+        // enabled gzip compression by default
+        if (config.server.compress !== false) {
+            blogApp.use(compress());
+        }
+
+        // ## View engine
+        // set the view engine
+        blogApp.set('view engine', 'hbs');
+
+        // Create a hbs instance for admin and init view engine
+        adminApp.set('view engine', 'hbs');
+        adminApp.engine('hbs', adminHbs.express3({}));
+
+        // Load helpers
+        helpers.loadCoreHelpers(adminHbs);
 
         // ## Middleware and Routing
-        middleware(parentApp);
+        middleware(blogApp, adminApp);
 
         // Log all theme errors and warnings
         validateThemes(config.paths.themePath)
@@ -111,15 +131,7 @@ function init(options) {
                 });
             });
 
-        return new GhostServer(parentApp);
-    }).then(function (_ghostServer) {
-        ghostServer = _ghostServer;
-
-        // scheduling can trigger api requests, that's why we initialize the module after the ghost server creation
-        // scheduling module can create x schedulers with different adapters
-        return scheduling.init(_.extend(config.scheduling, {apiUrl: config.url + config.urlFor('api')}));
-    }).then(function () {
-        return ghostServer;
+        return new GhostServer(blogApp);
     });
 }
 

@@ -18,6 +18,7 @@ var _              = require('lodash'),
     cwd            = process.cwd().replace(/( |\(|\))/g, escapeChar + '$1'),
     buildDirectory = path.resolve(cwd, '.build'),
     distDirectory  = path.resolve(cwd, '.dist'),
+    mochaPath      = path.resolve(cwd + '/node_modules/.bin/mocha'),
     emberPath      = path.resolve(cwd + '/core/client/node_modules/.bin/ember'),
 
     // ## Grunt configuration
@@ -95,8 +96,17 @@ var _              = require('lodash'),
             // more information.
             jshint: {
                 options: {
-                    jshintrc: '.jshintrc'
+                    jshintrc: true
                 },
+
+                client: [
+                    'core/client/**/*.js',
+                    '!core/client/node_modules/**/*.js',
+                    '!core/client/bower_components/**/*.js',
+                    '!core/client/tmp/**/*.js',
+                    '!core/client/dist/**/*.js',
+                    '!core/client/vendor/**/*.js'
+                ],
 
                 server: [
                     '*.js',
@@ -112,6 +122,36 @@ var _              = require('lodash'),
             jscs: {
                 options: {
                     config: true
+                },
+
+                client: {
+                    options: {
+                        config: 'core/client/.jscsrc'
+                    },
+
+                    files: {
+                        src: [
+                            'core/client/**/*.js',
+                            '!core/client/node_modules/**/*.js',
+                            '!core/client/bower_components/**/*.js',
+                            '!core/client/tests/**/*.js',
+                            '!core/client/tmp/**/*.js',
+                            '!core/client/dist/**/*.js',
+                            '!core/client/vendor/**/*.js'
+                        ]
+                    }
+                },
+
+                client_tests: {
+                    options: {
+                        config: 'core/client/tests/.jscsrc'
+                    },
+
+                    files: {
+                        src: [
+                            'core/client/tests/**/*.js'
+                        ]
+                    }
                 },
 
                 server: {
@@ -137,8 +177,7 @@ var _              = require('lodash'),
                     ui: 'bdd',
                     reporter: grunt.option('reporter') || 'spec',
                     timeout: '15000',
-                    save: grunt.option('reporter-output'),
-                    require: ['core/server/overrides']
+                    save: grunt.option('reporter-output')
                 },
 
                 // #### All Unit tests
@@ -169,10 +208,7 @@ var _              = require('lodash'),
                     src: [
                         'core/test/functional/module/**/*_spec.js'
                     ]
-                },
-
-                // #### Run single test (src is set dynamically, see grunt task 'test')
-                single: {}
+                }
             },
 
             // ### grunt-mocha-istanbul
@@ -188,8 +224,8 @@ var _              = require('lodash'),
                     options: {
                         mask: '**/*_spec.js',
                         coverageFolder: 'core/test/coverage/unit',
-                        mochaOptions: ['--timeout=15000', '--require', 'core/server/overrides'],
-                        excludes: ['core/client', 'core/server/built']
+                        mochaOptions: ['--timeout=15000'],
+                        excludes: ['core/client/**', 'core/server/built']
                     }
                 },
                 coverage_all: {
@@ -202,8 +238,8 @@ var _              = require('lodash'),
                     options: {
                         coverageFolder: 'core/test/coverage/all',
                         mask: '**/*_spec.js',
-                        mochaOptions: ['--timeout=15000', '--require', 'core/server/overrides'],
-                        excludes: ['core/client', 'core/server/built']
+                        mochaOptions: ['--timeout=15000'],
+                        excludes: ['core/client/**', 'core/server/built']
                     }
 
                 }
@@ -232,6 +268,9 @@ var _              = require('lodash'),
                 ember: {
                     command: function (mode) {
                         switch (mode) {
+                            case 'init':
+                                return 'echo Installing client dependencies... && npm install';
+
                             case 'prod':
                                 return emberPath + ' build --environment=production --silent';
 
@@ -249,13 +288,25 @@ var _              = require('lodash'),
                         }
                     }
                 },
+                // #### Run bower install
+                // Used as part of `grunt init`. See the section on [Building Assets](#building%20assets) for more
+                // information.
+                bower: {
+                    command: path.resolve(cwd + '/node_modules/.bin/bower --allow-root install'),
+                    options: {
+                        stdout: true,
+                        stdin: false
+                    }
+                },
+
+                test: {
+                    command: function (test) {
+                        return 'node ' + mochaPath  + ' --timeout=15000 --ui=bdd --reporter=spec --colors core/test/' + test;
+                    }
+                },
 
                 shrinkwrap: {
                     command: 'npm shrinkwrap'
-                },
-
-                prune: {
-                    command: 'npm prune'
                 },
 
                 dedupe: {
@@ -264,6 +315,10 @@ var _              = require('lodash'),
 
                 csscombfix: {
                     command: path.resolve(cwd + '/node_modules/.bin/csscomb -c core/client/app/styles/csscomb.json -v core/client/app/styles')
+                },
+
+                csscomblint: {
+                    command: path.resolve(cwd + '/node_modules/.bin/csscomb -c core/client/app/styles/csscomb.json -lv core/client/app/styles')
                 }
             },
 
@@ -338,18 +393,6 @@ var _              = require('lodash'),
                     files: {
                         'core/shared/ghost-url.min.js': 'core/shared/ghost-url.js'
                     }
-                }
-            },
-
-            // ### grunt-subgrunt
-            // Run grunt tasks in submodule Gruntfiles
-            subgrunt: {
-                init: {
-                    'core/client': 'init'
-                },
-
-                lint: {
-                    'core/client': 'lint'
                 }
             }
         };
@@ -460,7 +503,6 @@ var _              = require('lodash'),
         // `grunt test:unit/apps_spec.js` will run just the tests inside the apps_spec.js file
         //
         // It works for any path relative to the core/test folder. It will also run all the tests in a single directory
-        // You can also run a test with grunt test:core/test/unit/... to get bash autocompletion
         //
         // `grunt test:integration/api` - runs the api integration tests
         // `grunt test:integration` - runs the integration tests in the root folder and excludes all api & model tests
@@ -469,20 +511,7 @@ var _              = require('lodash'),
                 grunt.fail.fatal('No test provided. `grunt test` expects a filename. e.g.: `grunt test:unit/apps_spec.js`. Did you mean `npm test` or `grunt validate`?');
             }
 
-            if (!test.match(/core\/test/)) {
-                test = 'core/test/' + test;
-            }
-
-            // CASE: execute folder
-            if (!test.match(/.js/)) {
-                test += '/**';
-            } else if (!fs.existsSync(test)) {
-                grunt.fail.fatal('This file does not exist!');
-            }
-
-            cfg.mochacli.single.src = [test];
-            grunt.initConfig(cfg);
-            grunt.task.run('test-setup', 'mochacli:single');
+            grunt.task.run('test-setup', 'shell:test:' + test);
         });
 
         // ### Validate
@@ -500,7 +529,7 @@ var _              = require('lodash'),
             } else if (process.env.TEST_SUITE === 'client') {
                 grunt.task.run(['init', 'test-client']);
             } else if (process.env.TEST_SUITE === 'lint') {
-                grunt.task.run(['lint']);
+                grunt.task.run(['shell:ember:init', 'shell:bower', 'lint']);
             } else {
                 grunt.task.run(['validate-all']);
             }
@@ -529,12 +558,8 @@ var _              = require('lodash'),
         // ### Lint
         //
         // `grunt lint` will run the linter and the code style checker so you can make sure your code is pretty
-        grunt.registerTask('lint', 'Run the code style checks and linter for server',
-            ['jshint', 'jscs']
-        );
-
-        grunt.registerTask('lint-all', 'Run the code style checks and linter for server and client',
-            ['lint', 'subgrunt:lint']
+        grunt.registerTask('lint', 'Run the code style checks and linter',
+            ['jshint', 'jscs', 'shell:csscomblint']
         );
 
         // ### test-setup *(utility)(
@@ -761,16 +786,16 @@ var _              = require('lodash'),
         // ### Init assets
         // `grunt init` - will run an initial asset build for you
         //
-        // Grunt init runs `npm install && bower install` inside `core/client` as well as the standard asset build
-        // tasks which occur when you run just `grunt`. This fetches the latest client-side dependencies.
+        // Grunt init runs `bower install` as well as the standard asset build tasks which occur when you run just
+        // `grunt`. This fetches the latest client side dependencies, and moves them into their proper homes.
         //
-        // This task is very important, and should always be run when fetching down an updated code base just after
+        // This task is very important, and should always be run and when fetching down an updated code base just after
         // running `npm install`.
         //
         // `bower` does have some quirks, such as not running as root. If you have problems please try running
         // `grunt init --verbose` to see if there are any errors.
         grunt.registerTask('init', 'Prepare the project for development',
-            ['update_submodules', 'subgrunt:init', 'assets', 'default']);
+            ['shell:ember:init', 'shell:bower', 'update_submodules', 'assets', 'default']);
 
         // ### Basic Asset Building
         // Builds and moves necessary client assets. Prod additionally builds the ember app.
@@ -829,7 +854,7 @@ var _              = require('lodash'),
                     dest: '<%= paths.releaseBuild %>/'
                 });
 
-                grunt.task.run(['init', 'prod', 'clean:release',  'shell:dedupe', 'shell:prune', 'shell:shrinkwrap', 'copy:release', 'compress:release']);
+                grunt.task.run(['init', 'prod', 'clean:release',  'shell:dedupe', 'shell:shrinkwrap', 'copy:release', 'compress:release']);
             }
         );
     };
